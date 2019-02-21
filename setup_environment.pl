@@ -19,18 +19,26 @@ my $dry_run = grep { /^(?:-d|--dry-run)$/ } @ARGV;
 # If flag is set, does not prompt before overwriting a file
 my $overwrite_all = grep { /^(?:-o|--overwrite-all)$/ } @ARGV;
 
+# If flag is set, all installations are run.
+my $install_all = grep { /^(?:-a|--install-all)$/ } @ARGV;
+
 # See later for -w|--winhome arg
 
 ##############
 # Script
 ##############
+
 # Copy .vimrc into home
-print "Copying .vimrc to ~/.vimrc...\n";
-install_vimrc();
+install_vimrc() if grep { /^(?:-v|--vimrc)$/ } @ARGV or $install_all;
 
 # Install tealdeer properly
-print "Installing tldr...\n";
-install_tealdeer($bin_dir);
+install_tealdeer($bin_dir) if grep { /^(?:-t|--tldr)$/ } @ARGV or $install_all;
+
+# Install fish shell and set to default
+install_fish() if grep { /^(?:-f|--fish)$/ } @ARGV or $install_all;
+
+# Does the user want to do WSL symlinking?
+exit 0 unless grep { /^(-s|--symlink)$/ } @ARGV or $install_all;
 
 # Detect if WSL or exit
 my $wsl = grep { /Microsoft/i } `uname -a`;
@@ -47,7 +55,11 @@ for (@ARGV) {
   $winhome = $1 if $_ =~ /--winhome=(.+)$/;
   last if $winhome;
 }
-die "No Windows home provided (-w|--winhome=/mnt/c/Users/...)" unless $winhome;
+
+# Default winhome in WSL
+$winhome = '/mnt/c/Users/' . $ENV{'LOGNAME'} unless $winhome;
+
+die "No Windows home provided (-w=|--winhome=/mnt/c/Users/...)" unless $winhome;
 die "$winhome is not a directory or doesn't exist" unless -d $winhome;
 
 symlink_windows_libraries_to_home($winhome, $home);
@@ -79,6 +91,8 @@ sub symlink_windows_libraries_to_home {
 }
 
 sub install_vimrc {
+  print "Copying .vimrc to ~/.vimrc...\n";
+
   # If .vimrc is already there, prompt the user
   if (-e $ENV{'HOME'} . '/.vimrc' and not $overwrite_all) {
     return unless user_says_yes_to("~/.vimrc found. Overwrite? (y/n)");
@@ -101,6 +115,8 @@ sub user_says_yes_to {
 sub install_tealdeer {
   my $bin_dir = shift;
 
+  print "Installing tldr...\n";
+
   die "$bin_dir doesn't exist or is not a directory" unless -d $bin_dir;
 
   if (-e "$bin_dir/tldr") {
@@ -116,4 +132,57 @@ sub install_tealdeer {
   my $return_code = system("wget -q -O $bin_dir/tldr $url");
   die "Downloading tldr with wget returned $return_code" if $return_code != 0;
   return $return_code;
+}
+
+sub install_fish {
+  my $bashrc_location = $ENV{'HOME'} . '/.bashrc';
+  die "no .bashrc found" unless -e $bashrc_location;
+
+  if (user_says_yes_to('Install fish shell v3? (y/n)')) {
+    # Add fish
+    unless ($dry_run) {
+      my $return_code = system("sudo apt-add-repository -y ppa:fish-shell/release-3");
+      die "Failed to add fish v3 repo" if $return_code != 0;
+    }
+    else {
+      print "This is where we would add the fish repository, but it's a dry run.\n";
+    }
+
+    # Update packages
+    $return_code = system("sudo apt-get --quiet update");
+    die "Updating failed (return code was $return_code)" if $return_code != 0;
+
+    # Pass simulate to apt-get if it's a dry run.
+    my $simulate = $dry_run ? '--simulate' : '';
+    # Install fish.
+    $return_code = system("sudo apt-get --quiet $simulate install fish");
+  }
+
+  if (user_says_yes_to('Set fish as default shell? (y/n)')) {
+    # Grab our bashrc contents
+    my $custom_bashrc_contents = slurp_file('./.bashrc');
+
+    # Make sure the contents are not already in the file
+    $return_code = system("grep --quiet 'ADDED BY setup_environment.pl' $bashrc_location");
+    if ($return_code == 0) {
+      print "$bashrc_location has already been modified, skipping...\n";
+    }
+    else {
+      print "Appending ./.bashrc to $bashrc_location...\n";
+      open (my $fh, '>>', $bashrc_location) or die "Couldn't open $bashrc_location for appending";
+      print $fh $custom_bashrc_contents unless $dry_run;
+      close $fh;
+    }
+  }
+}
+
+sub slurp_file {
+  my $filename = shift;
+
+  open my $fh, '<', $filename or die "Couldn't open $filename for reading";
+  $/ = undef;
+  my $data = <$fh>;
+  close $fh;
+
+  return $data;
 }
