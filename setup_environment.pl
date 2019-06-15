@@ -33,6 +33,9 @@ my $install_all = grep { /^(?:-a|--install-all)$/ } @ARGV;
 # Copy .vimrc into home
 install_vimrc() if grep { /^(?:-v|--vimrc)$/ } @ARGV or $install_all;
 
+# Copy .nanorc and nano stuff into home
+install_nanorc() if grep { /^(?:-n|--nanorc)$/ } @ARGV or $install_all;
+
 # Install tealdeer properly
 install_tealdeer($bin_dir) if grep { /^(?:-t|--tldr)$/ } @ARGV or $install_all;
 
@@ -71,9 +74,7 @@ exit 0;
 ################
 # Subroutines
 ################
-sub symlink_windows_libraries_to_home {
-  my $winhome  = shift;
-  my $wsl_home = shift;
+sub symlink_windows_libraries_to_home { my ($winhome, $wsl_home) = @_;
 
   # rtrim slashes from winhome
   $winhome =~ s/\/+$//g;
@@ -116,9 +117,11 @@ sub install_nanorc {
   if (-e $dot_nano_dir and not $overwrite_all) {
     return unless user_says_yes_to("~/.nano found. Overwrite? (y/n)");
     print "Overwriting ~/.nano...\n";
+    system("rm -rf $dot_nano_dir");
   }
 
-  copy(dirname(__FILE__). "/.nano", $dot_nano_dir) unless $dry_run;
+  system("git clone --quiet https://github.com/scopatz/nanorc.git $dot_nano_dir") 
+    unless $dry_run;
 }
 
 sub user_says_yes_to {
