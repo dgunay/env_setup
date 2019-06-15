@@ -5,10 +5,10 @@ use File::Copy;
 use File::Basename;
 use English;
 
-die "Script only works in Linux/WSL" unless $OSNAME eq 'linux';
+die "Script only works in Linux/WSL\n" unless $OSNAME eq 'linux';
 
-# Environment stuff
-my $bin_dir = $ENV{'HOME'} . '/.local/bin';
+# I usually like to install my own binaries here
+my $bin_dir = $ENV{'HOME'} . '/bin';
 
 ##############
 # CLI args
@@ -21,6 +21,8 @@ my $overwrite_all = grep { /^(?:-o|--overwrite-all)$/ } @ARGV;
 
 # If flag is set, all installations are run.
 my $install_all = grep { /^(?:-a|--install-all)$/ } @ARGV;
+
+# TODO: alternate home dir (easier to test)
 
 # See later for -w|--winhome arg
 
@@ -90,16 +92,33 @@ sub symlink_windows_libraries_to_home {
   }
 }
 
-sub install_vimrc {
-  print "Copying .vimrc to ~/.vimrc...\n";
+sub install_rc_file { my ($rc) = @_;
+  print "Copying $rc to ~/$rc...\n";
 
-  # If .vimrc is already there, prompt the user
-  if (-e $ENV{'HOME'} . '/.vimrc' and not $overwrite_all) {
-    return unless user_says_yes_to("~/.vimrc found. Overwrite? (y/n)");
-    print "Overwriting ~/.vimrc...\n";
+  # If it's already there, prompt the user
+  if (-e $ENV{'HOME'} . "/$rc" and not $overwrite_all) {
+    return unless user_says_yes_to("~/$rc found. Overwrite? (y/n)");
+    print "Overwriting ~/$rc...\n";
   }
 
-  copy(dirname(__FILE__) . '/.vimrc', $ENV{'HOME'} . '/.vimrc') unless $dry_run;
+  copy(dirname(__FILE__) . "/$rc", $ENV{'HOME'} . "/$rc") unless $dry_run;
+}
+
+sub install_vimrc {
+  install_rc_file('.vimrc');
+}
+
+sub install_nanorc {
+  install_rc_file('.nanorc');
+
+  # Also install the .nano folder for syntax highlighting
+  my $dot_nano_dir = $ENV{'HOME'} . "/.nano";
+  if (-e $dot_nano_dir and not $overwrite_all) {
+    return unless user_says_yes_to("~/.nano found. Overwrite? (y/n)");
+    print "Overwriting ~/.nano...\n";
+  }
+
+  copy(dirname(__FILE__). "/.nano", $dot_nano_dir) unless $dry_run;
 }
 
 sub user_says_yes_to {
@@ -156,6 +175,10 @@ sub install_fish {
     my $simulate = $dry_run ? '--simulate' : '';
     # Install fish.
     $return_code = system("sudo apt-get --quiet $simulate install fish");
+
+    # Install config.fish
+    copy(dirname(__FILE__) . '/config.fish', $ENV{'HOME'} . '/.config/fish/config.fish') 
+      unless $dry_run;
   }
 
   if (user_says_yes_to('Set fish as default shell? (y/n)')) {
@@ -172,7 +195,7 @@ sub install_fish {
       open (my $fh, '>>', $bashrc_location) or die "Couldn't open $bashrc_location for appending";
       print $fh $custom_bashrc_contents unless $dry_run;
       close $fh;
-    }
+    }    
   }
 }
 
